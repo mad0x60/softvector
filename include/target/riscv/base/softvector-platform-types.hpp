@@ -25,6 +25,7 @@
 #include "stdint.h"
 #include <vector>
 #include <array>
+#include <new>  // For placement new
 
 #include "vpu/softvector-types.hpp"
 #include "base.hpp"
@@ -99,13 +100,20 @@ class RVVector : public SVector
 class RVVRegField
 {
   protected:
-    std::vector<RVVector *> vs_{};             //!< Vector of RVVector's
-    std::array<SVRegister, 32> regs_{};        //!< Fixed sized (32) SVRegister s. v0...v31
-    const size_t vector_register_length_bits_; //!< VLEN, Vector register length in bits
-    const size_t vector_length_;               //!< VL, Vector length in elements
-    const size_t single_element_width_bits_;   //!< SEW, single element width in bits
-    uint8_t *mem_;                             //!< Main memory.
-    const SVMul multiplicity_; //!< LMUL, Vector register multiplicity, i.e. how many vector register make up one vector
+    std::vector<RVVector *> vs_{};                    //!< Vector of RVVector's
+    std::array<SVRegister, 32> regs_{};               //!< Fixed sized (32) SVRegister s. v0...v31
+    
+    // Pre-allocated storage for RVVector objects (TODO(MM) investigate better default allocation size)
+    static constexpr size_t MAX_RVVECTORS = 128;      //!< Maximum pre-allocated RVVector objects
+    alignas(RVVector) char rvvector_storage_[MAX_RVVECTORS * sizeof(RVVector)];
+    std::array<bool, MAX_RVVECTORS> storage_used_{};  //!< Track which storage slots are used
+    bool used_heap_allocation_{false};                //!< Track if we fell back to heap allocation
+    
+    const size_t vector_register_length_bits_;        //!< VLEN, Vector register length in bits
+    const size_t vector_length_;                      //!< VL, Vector length in elements
+    const size_t single_element_width_bits_;          //!< SEW, single element width in bits
+    uint8_t *mem_;                                    //!< Main memory.
+    const SVMul multiplicity_;                        //!< LMUL, Vector register multiplicity, i.e. how many vector register make up one vector
   public:
     //////////////////////////////////////////////////////////////////////////////////////
     /// \brief Constructor for referenced main memory, i.e. externally allocated memory
@@ -121,6 +129,9 @@ class RVVRegField
         , mem_(mem)
         , multiplicity_(multiplicity)
     {
+        // Initialize all storage slots as unused
+        storage_used_.fill(false);
+        used_heap_allocation_ = false;
     }
 
     //////////////////////////////////////////////////////////////////////////////////////
@@ -141,21 +152,55 @@ class RVVRegField
             it.init_ref(vector_register_length_bits_, tmem);
             tmem += vector_register_length_bits_ / 8;
         }
-        for (size_t i_group = 0; i_group < n_vector_register_groups; ++i_group)
-        {
-            vs_.push_back(new RVVector(vector_length_, single_element_width_bits_, i_group * group_size_regs,
-                                       regs_[i_group * group_size_regs].mem_));
+        
+        // Use placement new with pre-allocated storage instead of heap allocation
+        // Safety check: ensure we don't exceed pre-allocated storage
+        if (n_vector_register_groups > MAX_RVVECTORS) {
+            // Fallback to heap allocation if we exceed pre-allocated storage
+            used_heap_allocation_ = true;
+            for (size_t i_group = 0; i_group < n_vector_register_groups; ++i_group)
+            {
+                vs_.push_back(new RVVector(vector_length_, single_element_width_bits_, i_group * group_size_regs,
+                                           regs_[i_group * group_size_regs].mem_));
+            }
+        } else {
+            // search  find a next available pre-allocated storage slot
+            for (size_t i_group = 0; i_group < n_vector_register_groups; ++i_group)
+            {
+                // finding next available storage slot
+                RVVector* storage_ptr = reinterpret_cast<RVVector*>(rvvector_storage_ + i_group * sizeof(RVVector));
+                
+                // using "placement new" to construct RVVector in the preallocated memory
+                new (storage_ptr) RVVector(vector_length_, single_element_width_bits_, i_group * group_size_regs,
+                                           regs_[i_group * group_size_regs].mem_);
+                
+                vs_.push_back(storage_ptr);
+                storage_used_[i_group] = true;
+            }
         }
     }
 
     //////////////////////////////////////////////////////////////////////////////////////
-    /// \brief Destructor. Deletes generated SVector and SRegister fields
+    /// \brief Destructor. Handles both pre-allocated and heap-allocated RVVector objects
     virtual ~RVVRegField(void)
     {
-        for (auto &v : vs_)
-        {
-            delete v;
+        if (used_heap_allocation_) {
+            // We used heap allocation, so use regular delete
+            for (auto &v : vs_) {
+                delete v;
+            }
+        } else {
+            // We used pre-allocated storage, so call destructors explicitly
+            for (size_t i = 0; i < storage_used_.size(); ++i)
+            {
+                if (storage_used_[i])
+                {
+                    RVVector* obj_ptr = reinterpret_cast<RVVector*>(rvvector_storage_ + i * sizeof(RVVector));
+                    obj_ptr->~RVVector();  // Explicit destructor call, no free() needed!
+                }
+            }
         }
+        vs_.clear();
     }
 
     //////////////////////////////////////////////////////////////////////////////////////
