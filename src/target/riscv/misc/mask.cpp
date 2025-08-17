@@ -97,7 +97,7 @@ auto iterate_register_sxf(const SVRegister &vs2, SVRegister &vd, const SVRegiste
 
 auto check_vector_register_overlap(const RVVector &vec, const SVRegister &reg) -> bool
 {
-    if ((reg.mem_ >= vec.mem_) && (reg.mem_ < vec.mem_ + vec.length_ * (vec.activeElement.width_in_bits_ >> 3)))
+    if ((reg.mem_ >= vec.mem_) && (reg.mem_ < vec.mem_ + vec.length_ * (vec.activeElement_.width_in_bits_ >> 3)))
         return true;
     if ((vec.mem_ >= reg.mem_) && (vec.mem_ < reg.mem_ + (reg.length_bits_ >> 3)))
         return true;

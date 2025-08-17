@@ -44,6 +44,8 @@ class SVMul
     SVMul(const SVMul &other) : n_(other.n_), d_(other.d_) {}
 };
 
+
+
 //////////////////////////////////////////////////////////////////////////////////////
 /// \class RVVector
 /// \brief RISC-V Vector. Makes use of one single SVElement changing its reference to data storage. This prevents
@@ -51,8 +53,10 @@ class SVMul
 class RVVector : public SVector
 {
   public:
-    uint8_t *mem_;            //!< Main memory.
-    SVElement &activeElement; //!< Element referencer, is updated when subscript is applied to an object of this class
+    uint8_t *mem_;                     //!< Main memory.
+    mutable SVElement activeElement_;  //!< Element referencer, is updated when subscript is applied to an object of this class
+
+
 
     //////////////////////////////////////////////////////////////////////////////////////
     /// \brief Check if memory space of this RVVector overlaps with another
@@ -60,9 +64,9 @@ class RVVector : public SVector
     /// \returns 1 if v starts within this. -1 if this starts within v. 0 if no overlap detected.
     int8_t check_mem_overlap(const RVVector &v)
     {
-        if ((v.mem_ >= mem_) && (v.mem_ < mem_ + length_ * (activeElement.width_in_bits_ >> 3)))
+        if ((v.mem_ >= mem_) && (v.mem_ < mem_ + length_ * (activeElement_.width_in_bits_ >> 3)))
             return 1;
-        if ((mem_ >= v.mem_) && (mem_ < v.mem_ + v.length_ * (v.activeElement.width_in_bits_ >> 3)))
+        if ((mem_ >= v.mem_) && (mem_ < v.mem_ + v.length_ * (v.activeElement_.width_in_bits_ >> 3)))
             return -1;
         return 0;
     }
@@ -71,8 +75,8 @@ class RVVector : public SVector
     /// \brief Overloaded array subscript to return the indexed SVElement as reference
     SVElement &operator[](const size_t index) const
     {
-        activeElement.mem_ = mem_ + index * activeElement.width_in_bits_ / 8;
-        return (activeElement);
+        activeElement_.mem_ = mem_ + index * activeElement_.width_in_bits_ / 8;
+        return (activeElement_);
     }
 
     //////////////////////////////////////////////////////////////////////////////////////
@@ -81,11 +85,11 @@ class RVVector : public SVector
              uint8_t *mem)
         : SVector(length_elements, start_reg_index)
         , mem_(mem)
-        , activeElement(*(new SVElement(single_element_width_bits, mem)))
+        , activeElement_(single_element_width_bits, mem) 
     {
     }
 
-    virtual ~RVVector(void) { delete &activeElement; }
+    virtual ~RVVector(void) {}
 };
 
 //////////////////////////////////////////////////////////////////////////////////////
