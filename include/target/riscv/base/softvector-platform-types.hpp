@@ -30,6 +30,15 @@
 #include "vpu/softvector-types.hpp"
 #include "base.hpp"
 
+#ifdef __GNUC__
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+#else
+#define likely(x) (x)
+#define unlikely(x) (x)
+#endif
+
+
 #define SVMaskReg SVRegister
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -184,19 +193,18 @@ class RVVRegField
     /// \brief Destructor. Handles both pre-allocated and heap-allocated RVVector objects
     virtual ~RVVRegField(void)
     {
-        if (used_heap_allocation_) {
-            // We used heap allocation, so use regular delete
+        if (unlikely(used_heap_allocation_)) {
+            // in case heap allocation is used call regular delete
             for (auto &v : vs_) {
                 delete v;
             }
         } else {
-            // We used pre-allocated storage, so call destructors explicitly
-            for (size_t i = 0; i < storage_used_.size(); ++i)
-            {
-                if (storage_used_[i])
-                {
+            // only iterate over used slots, not all 128
+            size_t used_count = vs_.size(); // Only iterate up to actually used slots
+            for (size_t i = 0; i < used_count && i < MAX_RVVECTORS; ++i) {
+                if (storage_used_[i]) {
                     RVVector* obj_ptr = reinterpret_cast<RVVector*>(rvvector_storage_ + i * sizeof(RVVector));
-                    obj_ptr->~RVVector();  // Explicit destructor call, no free() needed!
+                    obj_ptr->~RVVector();
                 }
             }
         }
