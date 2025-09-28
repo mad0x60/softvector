@@ -57,6 +57,14 @@ TARGET_INCLUDE_DIRECTORIES(${PROJECT_NAME} PUBLIC
 	include/
 )
 
+# for profiling
+target_compile_options(${PROJECT_NAME} PRIVATE 
+    -O3                    
+    -g                    
+    -fno-omit-frame-pointer 
+)
+
+
 ########### INSTALLATION ############
 
 #INSTALL(FILES ${PROJECT_SOURCE_DIR}/include/target/${TARGET_PLATFORM_NAME}/${TARGET_NAME}/${PROJECT_NAME}.h DESTINATION ${TARGET_PLATFORM_NAME}_${TARGET_NAME})
